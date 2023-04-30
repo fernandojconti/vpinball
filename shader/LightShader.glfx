@@ -17,7 +17,11 @@ layout(location=0) in vec3 vPosition;
 layout(location=1) in vec3 vNormal;
 layout(location=2) in vec2 tc;
 
+#ifndef SHADER_STANDALONE
 out vec3 tablePos_gs;
+#else
+out vec3 tablePos;
+#endif
 
 
 ////GEOMETRY
@@ -49,8 +53,17 @@ out vec4 color;
 ////vs_lightbulb_main
 void main()
 {
+#ifndef SHADER_STANDALONE
    gl_Position = vec4(vPosition, 1.0);
    tablePos_gs = vPosition;
+#else
+   gl_Position = vec4(vPosition, 1.0);
+   tablePos = vPosition;
+
+   gl_Position = matWorldViewProj[0]*gl_Position;
+   //Disabled since this would move backdrop lights behind other backdrop parts (rendered at z = 0), this could be readded with a max at 0, but I don't get why we would need this type of hack
+   //gl_Position.z = max(gl_Position.z, 0.00006103515625); // clamp lights to near clip plane to avoid them being partially clipped // 0.00006103515625 due to 16bit half float
+#endif
 }
 
 

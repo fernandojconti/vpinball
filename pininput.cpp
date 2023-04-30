@@ -1,4 +1,7 @@
 #include "stdafx.h"
+#ifdef __STANDALONE__
+#include "imgui/imgui_impl_sdl.h"
+#endif
 
 // from dinput.h, modernized to please clang
 #undef DIJOFS_X
@@ -34,11 +37,13 @@ PinInput::PinInput()
 {
    ZeroMemory(this, sizeof(PinInput));
 
+#ifndef __STANDALONE__
    m_pDI = nullptr;
 #ifdef USE_DINPUT_FOR_KEYBOARD
    m_pKeyboard = nullptr;
 #endif
    m_pMouse = nullptr;
+#endif
 
    leftMouseButtonDown = false;
    rightMouseButtonDown = false;
@@ -49,8 +54,10 @@ PinInput::PinInput()
    ZeroMemory(m_diq, sizeof(m_diq));
 
    m_num_joy = 0;
+#ifndef __STANDALONE__
    for (int k = 0; k < PININ_JOYMXCNT; ++k)
       m_pJoystick[k] = nullptr;
+#endif
 
    uShockType = 0;
 
@@ -98,6 +105,20 @@ PinInput::PinInput()
    m_joytableup = 0;
    m_joytabledown = 0;
 
+#ifdef __STANDALONE__
+   m_joylflipkey = SDL_CONTROLLER_BUTTON_LEFTSHOULDER + 1;
+   m_joyrflipkey = SDL_CONTROLLER_BUTTON_RIGHTSHOULDER + 1;
+   m_joyplungerkey = SDL_CONTROLLER_BUTTON_DPAD_DOWN + 1;
+   m_joyaddcreditkey = SDL_CONTROLLER_BUTTON_A + 1;
+   m_joystartgamekey = SDL_CONTROLLER_BUTTON_B + 1;
+   m_joypmcancel = SDL_CONTROLLER_BUTTON_Y + 1;
+   m_joyframecount = SDL_CONTROLLER_BUTTON_X + 1;
+   m_joycentertilt = SDL_CONTROLLER_BUTTON_DPAD_UP + 1;
+   m_joylefttilt = SDL_CONTROLLER_BUTTON_DPAD_LEFT + 1;
+   m_joyrighttilt = SDL_CONTROLLER_BUTTON_DPAD_RIGHT + 1;
+   m_joylockbar = SDL_CONTROLLER_BUTTON_LEFTSTICK + 1;
+#endif
+
    m_firedautostart = 0;
 
    m_pressed_start = 0;
@@ -128,11 +149,15 @@ PinInput::PinInput()
 PinInput::~PinInput()
 {
 #ifdef ENABLE_SDL_INPUT
+#ifndef __STANDALONE__
    if (m_rumbleDeviceSDL)
       SDL_HapticClose(m_rumbleDeviceSDL);
    if (m_inputDeviceSDL) {
       SDL_JoystickClose(m_inputDeviceSDL);
    }
+#else
+   SDL_GameControllerClose(m_gameController);
+#endif
 #endif
 }
 
@@ -192,6 +217,40 @@ void PinInput::LoadSettings()
    m_deadz = m_deadz*JOYRANGEMX / 100;
 }
 
+#ifdef __STANDALONE__
+void PinInput::SetupSDLGameController()
+{
+   if (m_gameController != nullptr) {
+      SDL_GameControllerClose(m_gameController);
+      m_gameController = nullptr;
+   }
+
+   if(SDL_NumJoysticks() < 1) {
+      PLOGI.printf("No joysticks connected!");
+   }
+   else {
+      for (int idx = 0; idx < SDL_NumJoysticks(); idx++) {
+         if (!SDL_IsGameController(idx)) {
+            PLOGI.printf("Joystick %d is not a game controller", idx);
+         }
+         else {
+#if defined(__APPLE__) && ((defined(TARGET_OS_IOS) && TARGET_OS_IOS) || (defined(TARGET_OS_TV) && TARGET_OS_TV))
+            if (!lstrcmpi(SDL_GameControllerNameForIndex(idx), "Remote"))
+               continue;
+#endif
+            m_gameController = SDL_GameControllerOpen(idx);
+
+            PLOGI.printf("Game controller added: name=%s, rumble=%s",
+               SDL_GameControllerName(m_gameController),
+               SDL_GameControllerHasRumble(m_gameController) ? "true" : "false");
+
+            break;
+         }
+      }
+   }
+}
+#endif
+
 //
 // DirectInput:
 //
@@ -202,6 +261,7 @@ void PinInput::LoadSettings()
 //		joystick. This function enables user interface elements for objects
 //		that are found to exist, and scales axes min/max values.
 //-----------------------------------------------------------------------------
+#ifndef __STANDALONE__
 BOOL CALLBACK EnumObjectsCallbackDI(const DIDEVICEOBJECTINSTANCE* pdidoi,
    VOID* pContext)
 {
@@ -326,6 +386,7 @@ BOOL CALLBACK EnumJoystickCallbackDI(LPCDIDEVICEINSTANCE lpddi, LPVOID pvRef)
    else
        return DIENUM_STOP; //allocation for only PININ_JOYMXCNT joysticks, ignore any others
 }
+#endif
 
 void PinInput::PushQueue(DIDEVICEOBJECTDATA * const data, const unsigned int app_data/*, const U32 curr_time_msec*/)
 {
@@ -392,6 +453,7 @@ void PinInput::GetInputDeviceData(/*const U32 curr_time_msec*/)
    // cache to avoid double key triggers
    static bool oldKeyStates[eCKeys] = { false };
 
+#ifndef __STANDALONE__
    unsigned int i2 = 0;
    for (unsigned int i = 0; i < eCKeys; ++i)
    {
@@ -415,7 +477,9 @@ void PinInput::GetInputDeviceData(/*const U32 curr_time_msec*/)
       ++i2;
    }
 #endif
+#endif
 
+#ifndef __STANDALONE__
    // mouse
    if (m_pMouse && m_enableMouseInPlayer)
    {
@@ -512,6 +576,7 @@ void PinInput::GetInputDeviceData(/*const U32 curr_time_msec*/)
          }
       }
    }
+#endif
 
    // same for joysticks 
    switch (m_inputApi) {
@@ -533,6 +598,7 @@ void PinInput::GetInputDeviceData(/*const U32 curr_time_msec*/)
 
 void PinInput::handleInputDI(DIDEVICEOBJECTDATA *didod)
 {
+#ifndef __STANDALONE__
    for (int k = 0; k < m_num_joy; ++k)
    {
 #ifdef USE_DINPUT8
@@ -557,6 +623,7 @@ void PinInput::handleInputDI(DIDEVICEOBJECTDATA *didod)
          }
       }
    }
+#endif
 }
 
 void PinInput::handleInputXI(DIDEVICEOBJECTDATA *didod)
@@ -674,11 +741,49 @@ void PinInput::handleInputSDL(DIDEVICEOBJECTDATA *didod)
    int j = 0;
    while (SDL_PollEvent(&e) != 0 && j<32)
    {
+#ifdef __STANDALONE__
+       ImGui_ImplSDL2_ProcessEvent(&e);
+#endif
       //User requests quit
       switch (e.type) {
+#ifdef __STANDALONE__
+      case SDL_WINDOWEVENT:
+         switch (e.window.event) {
+         case SDL_WINDOWEVENT_FOCUS_GAINED:
+            g_pplayer->m_gameWindowActive = true;
+            break;
+         case SDL_WINDOWEVENT_FOCUS_LOST:
+            g_pplayer->m_gameWindowActive = false;
+            break;
+         }
+         break;
+#if (defined(__APPLE__) && (defined(TARGET_OS_IOS) && TARGET_OS_IOS)) || defined(__ANDROID__)
+      case SDL_FINGERDOWN:
+      case SDL_FINGERUP: {
+         POINT point;
+         point.x = (int)((float)g_pplayer->m_wnd_width * e.tfinger.x);
+         point.y = (int)((float)g_pplayer->m_wnd_height * e.tfinger.y);
+
+         for (unsigned int i = 0; i < 8; ++i)
+            if ((g_pplayer->m_touchregion_pressed[i] != (e.type == SDL_FINGERDOWN)) && Intersect(touchregion[i], g_pplayer->m_wnd_width, g_pplayer->m_wnd_height, point, fmodf(g_pplayer->m_ptable->m_BG_rotation[g_pplayer->m_ptable->m_BG_current_set], 360.0f) != 0.f)) {
+               g_pplayer->m_touchregion_pressed[i] = (e.type == SDL_FINGERDOWN);
+
+               DIDEVICEOBJECTDATA didod;
+               didod.dwOfs = g_pplayer->m_rgKeys[touchkeymap[i]];
+               didod.dwData = g_pplayer->m_touchregion_pressed[i] ? 0x80 : 0;
+               PushQueue(&didod, APP_KEYBOARD/*, curr_time_msec*/);
+            }
+         break;
+      }
+#endif
+#endif
       case SDL_QUIT:
          //Open Exit dialog
+#ifdef __STANDALONE__
+         g_pvp->QuitPlayer(Player::CloseState::CS_USER_INPUT);
+#endif
          break;
+#ifndef __STANDALONE__
       case SDL_JOYDEVICEADDED:
          if (!m_inputDeviceSDL) {
             m_inputDeviceSDL = SDL_JoystickOpen(0);
@@ -739,6 +844,36 @@ void PinInput::handleInputSDL(DIDEVICEOBJECTDATA *didod)
             PushQueue(&didod[j], APP_JOYSTICK(0));
             j++;
          }
+         break;
+#endif
+#ifdef __STANDALONE__
+      case SDL_CONTROLLERDEVICEADDED:
+      case SDL_CONTROLLERDEVICEREMOVED:
+         SetupSDLGameController();
+         break;
+      case SDL_CONTROLLERBUTTONDOWN:
+      case SDL_CONTROLLERBUTTONUP:
+         if (e.cbutton.button < 32) {
+            didod[j].dwOfs = DIJOFS_BUTTON0 + (DWORD)e.cbutton.button;
+            didod[j].dwData = e.type == SDL_CONTROLLERBUTTONDOWN ? 0x80 : 0x00;
+            PushQueue(&didod[j], APP_JOYSTICK(0));
+            j++;
+         }
+         break;
+      case SDL_KEYUP:
+      case SDL_KEYDOWN:
+         if (e.key.repeat == 0) {
+            const unsigned int dik = get_dik_from_sdlk(e.key.keysym.sym);
+            if (dik != ~0u) {
+               didod[j].dwOfs = dik;
+               didod[j].dwData = e.type == SDL_KEYDOWN ? 0x80 : 0;
+               //didod[j].dwTimeStamp = curr_time_msec;
+               PushQueue(&didod[j], APP_KEYBOARD/*, curr_time_msec*/);
+               j++; 
+            }
+         }
+         break;
+#endif
       }
    }
 #endif
@@ -773,8 +908,13 @@ void PinInput::PlayRumble(const float lowFrequencySpeed, const float highFrequen
       break;
    case 2: //SDL2
 #ifdef ENABLE_SDL_INPUT
+#ifndef __STANDALONE__
       if (m_rumbleDeviceSDL)
          SDL_HapticRumblePlay(m_rumbleDeviceSDL, saturate(max(lowFrequencySpeed, highFrequencySpeed)), ms_duration); //!! meh
+#else
+      if (m_gameController && SDL_GameControllerHasRumble(m_gameController))
+         SDL_GameControllerRumble(m_gameController, (saturate(lowFrequencySpeed) * 65535.f), (saturate(highFrequencySpeed) * 65535.f), ms_duration);
+#endif
 #endif
       break;
    case 3: //IGameController
@@ -789,9 +929,14 @@ void PinInput::Init(const HWND hwnd)
    m_hwnd = hwnd;
 
 #if defined(ENABLE_SDL_INPUT)
+#ifndef __STANDALONE__
    SDL_InitSubSystem(SDL_INIT_JOYSTICK);
+#else
+   SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER | SDL_INIT_HAPTIC);
+#endif
 #endif
 
+#ifndef __STANDALONE__
    HRESULT hr;
 #ifdef USE_DINPUT8
    hr = DirectInput8Create(g_pvp->theInstance, DIRECTINPUT_VERSION, IID_IDirectInput8, (void **)&m_pDI, nullptr);
@@ -850,6 +995,7 @@ void PinInput::Init(const HWND hwnd)
    newStickyKeys.cbSize = sizeof(STICKYKEYS);
    newStickyKeys.dwFlags = 0;
    SystemParametersInfo(SPI_SETSTICKYKEYS, sizeof(STICKYKEYS), &newStickyKeys, SPIF_SENDCHANGE);
+#endif
 
    for (int i = 0; i < 4; i++)
       m_keyPressedState[i] = false;
@@ -857,6 +1003,10 @@ void PinInput::Init(const HWND hwnd)
    uShockType = 0;
 
    m_inputApi = LoadValueIntWithDefault(regKey[RegName::Player], "InputApi"s, 0);
+
+#ifdef __STANDALONE__
+   m_inputApi = 2;
+#endif
 
    switch (m_inputApi) {
    case 1: //xInput
@@ -870,6 +1020,7 @@ void PinInput::Init(const HWND hwnd)
       break;
    case 2: //SDL2
 #ifdef ENABLE_SDL_INPUT
+#ifndef __STANDALONE__
       m_inputDeviceSDL = SDL_JoystickOpen(0);
       if (m_inputDeviceSDL) {
          m_num_joy = 1;
@@ -884,6 +1035,9 @@ void PinInput::Init(const HWND hwnd)
          }
       }
       uShockType = USHOCKTYPE_GENERIC;
+#else
+    SetupSDLGameController();
+#endif
 #else
       m_inputApi = 0;
 #endif
@@ -901,6 +1055,7 @@ void PinInput::Init(const HWND hwnd)
 
    m_rumbleMode = (m_inputApi > 0) ? LoadValueIntWithDefault(regKey[RegName::Player], "RumbleMode"s, 3) : 0;
 
+#ifndef __STANDALONE__
    if (m_inputApi == 0) {
 #ifdef USE_DINPUT8
       m_pDI->EnumDevices(DI8DEVCLASS_GAMECTRL, EnumJoystickCallbackDI, this, DIEDFL_ATTACHEDONLY); //enum Joysticks
@@ -908,6 +1063,7 @@ void PinInput::Init(const HWND hwnd)
       m_pDI->EnumDevices(DIDEVTYPE_JOYSTICK, EnumJoystickCallbackDI, this, DIEDFL_ATTACHEDONLY);   //enum Joysticks
 #endif
    }
+#endif
 
    gMixerKeyDown = false;
    gMixerKeyUp = false;
@@ -922,6 +1078,7 @@ void PinInput::UnInit()
    SDL_QuitSubSystem(SDL_INIT_JOYSTICK);
 #endif
 
+#ifndef __STANDALONE__
 #ifdef USE_DINPUT_FOR_KEYBOARD
    if (m_pKeyboard)
    {
@@ -963,6 +1120,7 @@ void PinInput::UnInit()
       m_pDI->Release();
       m_pDI = nullptr;
    }
+#endif
 
    ZeroMemory(m_diq, sizeof(m_diq));
 }
@@ -1626,6 +1784,7 @@ void PinInput::ProcessJoystick(const DIDEVICEOBJECTDATA * __restrict input, int 
         else
             FireKeyEvent(updown, input->dwOfs | 0x01000000); // unknown button events
     }
+#ifndef __STANDALONE__
     else //end joy buttons
     {
         // Axis Deadzone
@@ -1850,6 +2009,7 @@ void PinInput::ProcessJoystick(const DIDEVICEOBJECTDATA * __restrict input, int 
                 break;
         }
     }
+#endif
 }
 
 
@@ -2051,6 +2211,7 @@ int PinInput::GetNextKey() // return last valid keyboard key
 #else
    for (unsigned int i = 0; i < 0xFF; ++i)
    {
+#ifndef __STANDALONE__
       const SHORT keyState = GetAsyncKeyState(i);
       if (keyState & 1)
       {
@@ -2058,6 +2219,7 @@ int PinInput::GetNextKey() // return last valid keyboard key
          if (dik != ~0u)
             return dik;
       }
+#endif
    }
 #endif
 

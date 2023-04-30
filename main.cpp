@@ -13,12 +13,27 @@
 
 #define  SET_CRT_DEBUG_FIELD(a)   _CrtSetDbgFlag((a) | _CrtSetDbgFlag(_CRTDBG_REPORT_FLAG))
 
+#ifndef __STANDALONE__
 #include "vpinball_i.c"
+#endif
+
+#ifdef __STANDALONE__
+#include <filesystem>
+#endif
 
 #include <locale>
 #include <codecvt>
 
-#include "plog/Initializers/RollingFileInitializer.h"
+#include <plog/Init.h>
+#include <plog/Formatters/TxtFormatter.h>
+#include <plog/Appenders/RollingFileAppender.h>
+#ifdef __STANDALONE__
+#ifndef __ANDROID__
+#include <plog/Appenders/ConsoleAppender.h>
+#else
+#include <plog/Appenders/AndroidAppender.h>
+#endif
+#endif
 
 #ifdef CRASH_HANDLER
 extern "C" int __cdecl _purecall()
@@ -50,6 +65,7 @@ extern "C" int __cdecl _purecall()
 }
 #endif
 
+#ifndef __STANDALONE__
 #ifndef DISABLE_FORCE_NVIDIA_OPTIMUS
 extern "C" {
    __declspec(dllexport) DWORD NvOptimusEnablement = 0x00000001;
@@ -189,6 +205,12 @@ PCHAR* CommandLineToArgvA(PCHAR CmdLine, int* _argc)
    (*_argc) = argc;
    return argv;
 }
+#endif
+
+#ifdef __STANDALONE__
+int g_argc;
+char **g_argv;
+#endif
 
 void SetupLogger();
 
@@ -212,14 +234,18 @@ private:
 public:
    VPApp(HINSTANCE hInstance)
    {
+#ifndef __STANDALONE__
        m_vpinball.theInstance = GetInstanceHandle();
        SetResourceHandle(m_vpinball.theInstance);
+#endif
    }
 
    virtual ~VPApp() 
    {
+#ifndef __STANDALONE__
       _Module.Term();
       CoUninitialize();
+#endif
       g_pvp = nullptr;
 
 #ifdef _CRTDBG_MAP_ALLOC
@@ -231,6 +257,8 @@ public:
    }
    BOOL InitInstance() override
    {
+      g_pvp = &m_vpinball;
+
 #ifdef CRASH_HANDLER
       rde::CrashHandler::Init();
 #endif
@@ -280,8 +308,20 @@ public:
       // Default ini path (can be overriden from command line)
       szIniFileName = m_vpinball.m_szMyPrefPath + "VPinballX.ini"s;
 
+#ifndef __STANDALONE__
       int nArgs;
       LPSTR *szArglist = CommandLineToArgvA(GetCommandLine(), &nArgs);
+#elif (defined(__APPLE__) && ((defined(TARGET_OS_IOS) && TARGET_OS_IOS) || (defined(TARGET_OS_TV) && TARGET_OS_TV))) || defined(__ANDROID__)
+      int nArgs = 2;
+      string szPath = m_vpinball.m_szMyPath + "res/exampleTable.vpx";
+      char* szArglist[] = {
+         (char*)"-play",
+         (char*)szPath.c_str(),
+      };
+#else
+      int nArgs = g_argc;
+      char**  szArglist = g_argv;
+#endif
 
       for (int i = 0; i < nArgs; ++i)
       {
@@ -295,6 +335,35 @@ public:
             exit(0);
          }
 
+#ifdef __STANDALONE__
+         if (lstrcmpi(szArglist[i], _T("-listres")) == 0 || lstrcmpi(szArglist[i], _T("/listres")) == 0)
+         {
+            PLOGI << "Available fullscreen resolutions:";
+            int displays = getNumberOfDisplays();
+            for (int display = 0; display < displays; display++) {
+               vector<VideoMode> allVideoModes;
+               EnumerateDisplayModes(display, allVideoModes);
+               for (size_t i = 0; i < allVideoModes.size(); ++i) {
+                  VideoMode mode = allVideoModes.at(i);
+                  PLOGI << "display " << display << ": " << mode.width << "x" << mode.height
+                        << " (depth=" << mode.depth << ", refreshRate=" << mode.refreshrate << ")";
+               }
+            }
+            exit(0);
+         }
+         if (lstrcmpi(szArglist[i], _T("-listsnd")) == 0 || lstrcmpi(szArglist[i], _T("/listsnd")) == 0)
+         {
+            PLOGI << "Available sound devices:";
+            vector<AudioDevice> allAudioDevices;
+            EnumerateAudioDevices(allAudioDevices);
+            for (size_t i = 0; i < allAudioDevices.size(); ++i) {
+               AudioDevice audioDevice = allAudioDevices.at(i);
+               PLOGI << "id " << audioDevice.id << ": name=" << audioDevice.name << ", enabled=" << audioDevice.enabled;
+            }
+            exit(0);
+         }
+#endif
+
          //
 
          if (lstrcmpi(szArglist[i], _T("-LessCPUthreads")) == 0 || lstrcmpi(szArglist[i], _T("/LessCPUthreads")) == 0)
@@ -304,19 +373,23 @@ public:
 
          if (lstrcmpi(szArglist[i], _T("-UnregServer")) == 0 || lstrcmpi(szArglist[i], _T("/UnregServer")) == 0)
          {
+#ifndef __STANDALONE__
             _Module.UpdateRegistryFromResource(IDR_VPINBALL, FALSE);
             const HRESULT ret = _Module.UnregisterServer(TRUE);
             if (ret != S_OK)
                 ShowError("Unregister VP functions failed");
+#endif
             run = false;
             break;
          }
          if (lstrcmpi(szArglist[i], _T("-RegServer")) == 0 || lstrcmpi(szArglist[i], _T("/RegServer")) == 0)
          {
+#ifndef __STANDALONE__
             _Module.UpdateRegistryFromResource(IDR_VPINBALL, TRUE);
             const HRESULT ret = _Module.RegisterServer(TRUE);
             if (ret != S_OK)
                 ShowError("Register VP functions failed");
+#endif
             run = false;
             break;
          }
@@ -438,16 +511,21 @@ public:
             extractPov = extractpov;
             extractScript = extractscript;
 
+#ifndef __STANDALONE__
             // Remove leading - or /
             if ((szArglist[i + 1][0] == '-') || (szArglist[i + 1][0] == '/'))
                szTableFileName = szArglist[i + 1] + 1;
             else
                szTableFileName = szArglist[i + 1];
+#else
+            szTableFileName = szArglist[i + 1];
+#endif
 
             // Remove " "
             if (szTableFileName[0] == '"')
                szTableFileName = szTableFileName.substr(1, szTableFileName.size()-1);
 
+#ifndef __STANDALONE__
             // Add current path
             if (szTableFileName[1] != ':') {
                char szLoadDir[MAXSTRING];
@@ -460,6 +538,7 @@ public:
                   const string dir = PathFromFilename(szTableFileName);
                   SetCurrentDirectory(dir.c_str());
                }
+#endif
 
             ++i; // two params processed
 
@@ -470,12 +549,24 @@ public:
          }
       }
 
+#ifndef __STANDALONE__
       free(szArglist);
+#endif
 
       InitRegistry(szIniFileName);
 
       SetupLogger();
       PLOGI << "Starting VPX...";
+
+#ifdef __STANDALONE__
+      PLOGI << "m_logicalNumberOfProcessors=" << m_vpinball.m_logicalNumberOfProcessors;
+
+      PLOGI << "m_szMyPath=" << m_vpinball.m_szMyPath;
+      PLOGI << "m_szMyPrefPath=" << m_vpinball.m_szMyPrefPath;
+
+      if (!DirExists(PATH_USER))
+         std::filesystem::create_directory(PATH_USER);
+#endif
 
       // Start VP with file dialog open and then also playing that one?
       const bool stos = LoadValueBoolWithDefault(regKey[RegName::Editor], "SelectTableOnStart"s, true);
@@ -485,6 +576,7 @@ public:
          play = true;
       }
 
+#ifndef __STANDALONE__
       // load and register VP type library for COM integration
       char szFileName[MAXSTRING];
       if (GetModuleFileName(m_vpinball.theInstance, szFileName, MAXSTRING))
@@ -507,6 +599,7 @@ public:
          else
             m_vpinball.MessageBox("Could not load type library.", "Error", MB_ICONSTOP);
       }
+#endif
 
       InitVPX();
       //SET_CRT_DEBUG_FIELD( _CRTDBG_LEAK_CHECK_DF );
@@ -515,6 +608,7 @@ public:
 
    void InitVPX()
    {
+#ifndef __STANDALONE__
 #if _WIN32_WINNT >= 0x0400 & defined(_ATL_FREE_THREADED)
        const HRESULT hRes = _Module.RegisterClassObjects(CLSCTX_LOCAL_SERVER,
            REGCLS_MULTIPLEUSE | REGCLS_SUSPENDED);
@@ -530,6 +624,7 @@ public:
        iccex.dwSize = sizeof(INITCOMMONCONTROLSEX);
        iccex.dwICC = ICC_COOL_CLASSES;
        InitCommonControlsEx(&iccex);
+#endif
 
        {
            EditableRegistry::RegisterEditable<Bumper>();
@@ -554,12 +649,13 @@ public:
        }
 
        m_vpinball.AddRef();
-       g_pvp = &m_vpinball;
        m_vpinball.Create(nullptr);
        m_vpinball.m_bgles = bgles;
        m_vpinball.m_fgles = fgles;
 
+#ifndef __STANDALONE__
        g_haccel = LoadAccelerators(m_vpinball.theInstance, MAKEINTRESOURCE(IDR_VPACCEL));
+#endif
 
        if (file)
        {
@@ -604,9 +700,11 @@ public:
 
          m_vpinball.Release();
 
+#ifndef __STANDALONE__
          DestroyAcceleratorTable(g_haccel);
 
          _Module.RevokeClassObjects();
+#endif
          Sleep(THREADS_PAUSE); //wait for any threads to finish
 
          SaveRegistry(szIniFileName);
@@ -639,17 +737,34 @@ public:
 void SetupLogger()
 {
    plog::Severity maxLogSeverity = plog::none;
+#ifndef __STANDALONE__
    if (LoadValueBoolWithDefault(regKey[RegName::Editor], "EnableLog"s, false))
+#else
+   if (LoadValueBoolWithDefault(regKey[RegName::Editor], "EnableLog"s, true))
+#endif
    {
       static bool initialized = false;
       if (!initialized)
       {
          initialized = true;
-         static plog::RollingFileAppender<plog::TxtFormatter> fileAppender("vpinball.log", 1024 * 1024 * 5, 1);
+         string szLogPath = g_pvp->m_szMyPrefPath + "vpinball.log";
+         static plog::RollingFileAppender<plog::TxtFormatter> fileAppender(szLogPath.c_str(), 1024 * 1024 * 5, 1);
          static DebugAppender debugAppender;
          plog::Logger<PLOG_DEFAULT_INSTANCE_ID>::getInstance()->addAppender(&debugAppender);
          plog::Logger<PLOG_DEFAULT_INSTANCE_ID>::getInstance()->addAppender(&fileAppender);
          plog::Logger<PLOG_NO_DBG_OUT_INSTANCE_ID>::getInstance()->addAppender(&fileAppender);
+
+#ifdef __STANDALONE__
+#ifndef __ANDROID__
+         static plog::ConsoleAppender<plog::TxtFormatter> consoleAppender;
+         plog::Logger<PLOG_DEFAULT_INSTANCE_ID>::getInstance()->addAppender(&consoleAppender);
+         plog::Logger<PLOG_NO_DBG_OUT_INSTANCE_ID>::getInstance()->addAppender(&consoleAppender);
+#else
+         static plog::AndroidAppender<plog::TxtFormatter> androidAppender("vpinball");
+         plog::Logger<PLOG_DEFAULT_INSTANCE_ID>::getInstance()->addAppender(&androidAppender);
+         plog::Logger<PLOG_NO_DBG_OUT_INSTANCE_ID>::getInstance()->addAppender(&androidAppender);
+#endif
+#endif
       }
 #ifdef _DEBUG
       maxLogSeverity = plog::debug;
@@ -699,5 +814,19 @@ extern "C" int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE /*hPrevInstance*/, 
    SDL_Quit();
 #endif
    PLOGI << "Closing VPX...";
+#ifdef __STANDALONE__
+#if (defined(__APPLE__) && ((defined(TARGET_OS_IOS) && TARGET_OS_IOS) || (defined(TARGET_OS_TV) && TARGET_OS_TV))) || defined(__ANDROID__)
+   exit(retval);
+#endif
+#endif
    return retval;
 }
+
+#ifdef __STANDALONE__
+int main(int argc, char** argv) {
+   g_argc = argc;
+   g_argv = argv;
+
+   return WinMain(nullptr, nullptr, (LPTSTR)"", 0);
+}
+#endif

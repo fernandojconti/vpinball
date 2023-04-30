@@ -81,7 +81,9 @@ inline int FindIndexOf(const vector<T>& v, const T& val)
 #define fTrue 1
 #define fFalse 0
 
+#ifndef __STANDALONE__
 #define BOOL int
+#endif
 
 typedef uint32_t        U32;
 typedef int32_t         S32;
@@ -465,6 +467,7 @@ HRESULT OpenURL(const string& szURL);
 
 WCHAR *MakeWide(const string& sz);
 char *MakeChar(const WCHAR * const wz);
+string MakeString(const WCHAR * const wz);
 
 // in case the incoming string length is >= the maximum char length of the outgoing one, WideCharToMultiByte will not produce a zero terminated string
 // this variant always makes sure that the outgoing string is zero terminated
@@ -508,3 +511,15 @@ char* replace(const char* const original, const char* const pattern, const char*
  * @brief Detect whether the program is running on the Wine compatibility layer
  */
 bool IsOnWine();
+
+#ifdef __STANDALONE__
+#include "typedefs3D.h"
+
+float calc_brightness(float x);
+const char* glToString(GLuint value);
+
+extern "C" HRESULT external_open_storage(const OLECHAR* pwcsName, IStorage* pstgPriority, DWORD grfMode, SNB snbExclude, DWORD reserved, IStorage **ppstgOpen);
+extern "C" HRESULT external_create_object(const WCHAR *progid, IClassFactory* cf, IUnknown* obj);
+extern "C" void external_log_info(const char* format, ...);
+extern "C" void external_log_debug(const char* format, ...);
+#endif

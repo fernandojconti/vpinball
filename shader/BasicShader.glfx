@@ -181,13 +181,22 @@ layout(location=0) in vec3 vPosition;
 layout(location=1) in vec3 vNormal;
 layout(location=2) in vec2 tc;
 
+#ifndef SHADER_STANDALONE
 out vec2 tex01_gs;
 out vec3 tablePos_gs;
 out vec3 worldPos_gs;
 out vec3 normal_gs;
+#else
+out vec2 tex01;
+out vec3 tablePos;
+out vec3 worldPos;
+out vec3 normal;
+noperspective out vec2 tex03;
+#endif
 
 void main()
 {
+#ifndef SHADER_STANDALONE
    float4 vPosition4 = float4(vPosition,1.0);
    gl_Position = vPosition4;
    tex01_gs = tc;
@@ -195,6 +204,22 @@ void main()
    // trafo all into worldview space (as most of the weird trafos happen in view, world is identity so far)
    worldPos_gs = (matWorldView*vPosition4).xyz;
    normal_gs = normalize((matWorldViewInverseTranspose*vNormal).xyz);
+#else
+   float4 vPosition4 = float4(vPosition,1.0);
+   gl_Position = vPosition4;
+   tex01 = tc;
+   tablePos = (matWorld*vPosition4).xyz;
+   // trafo all into worldview space (as most of the weird trafos happen in view, world is identity so far)
+   worldPos = (matWorldView*vPosition4).xyz;
+   normal = normalize((matWorldViewInverseTranspose*vNormal).xyz);
+
+   gl_Position = matWorldViewProj[0]*gl_Position;
+#ifndef SHADER_GLES30
+   gl_ClipDistance[0] = dot(gl_Position, clip_planes[0]);
+#endif
+   vec2 screen_space = 0.5 * (gl_Position.xy / gl_Position.w) + vec2(0.5);
+   tex03.xy = screen_space;
+#endif
 }
 
 ////vs_notex_main
@@ -203,17 +228,39 @@ layout(location=0) in vec3 vPosition;
 layout(location=1) in vec3 vNormal;
 layout(location=2) in vec2 tc;
 
+#ifndef SHADER_STANDALONE
 out vec3 tablePos_gs;
 out vec3 worldPos_gs;
 out vec3 normal_gs;
+#else
+out vec3 tablePos;
+out vec3 worldPos;
+out vec3 normal;
+noperspective out vec2 tex03;
+#endif
 
 void main()
 {
+#ifndef SHADER_STANDALONE
    float4 vPosition4 = float4(vPosition,1.0);
    gl_Position = vPosition4;
    tablePos_gs = (matWorld*vPosition4).xyz;
    worldPos_gs = (matWorldView*vPosition4).xyz;
    normal_gs = normalize((matWorldViewInverseTranspose*vNormal).xyz);
+#else
+   float4 vPosition4 = float4(vPosition,1.0);
+   gl_Position = vPosition4;
+   tablePos = (matWorld*vPosition4).xyz;
+   worldPos = (matWorldView*vPosition4).xyz;
+   normal = normalize((matWorldViewInverseTranspose*vNormal).xyz);
+
+   gl_Position = matWorldViewProj[0]*gl_Position;
+#ifndef SHADER_GLES30
+   gl_ClipDistance[0] = dot(gl_Position, clip_planes[0]);
+#endif
+   vec2 screen_space = 0.5 * (gl_Position.xy / gl_Position.w) + vec2(0.5);
+   tex03.xy = screen_space;
+#endif
 }
 
 ////vs_depth_only_main_without_texture
@@ -221,8 +268,14 @@ void main()
 layout(location=0) in vec3 vPosition;
 
 void main()
-{ 
+{
+#ifndef SHADER_STANDALONE
    gl_Position = float4(vPosition, 1.0);
+#else
+   gl_Position = float4(vPosition, 1.0);
+
+   gl_Position = (matWorldViewProj[0]*gl_Position);
+#endif
 }
 
 ////vs_depth_only_main_with_texture
@@ -230,12 +283,23 @@ void main()
 layout(location=0) in vec3 vPosition;
 layout(location=1) in vec2 tc;
 
+#ifndef SHADER_STANDALONE
 out vec2 tex0_gs;
+#else
+out vec2 tex0;
+#endif
 
 void main()
 {
+#ifndef SHADER_STANDALONE
    gl_Position = float4(vPosition, 1.0);
    tex0_gs = tc;
+#else
+   gl_Position = float4(vPosition, 1.0);
+   tex0 = tc;
+
+   gl_Position = (matWorldViewProj[0]*gl_Position);
+#endif
 }
 
 ////gs_main
@@ -440,7 +504,11 @@ void main() {
    }
 
    BRANCH if (doReflections)
+#ifndef SHADER_GLES30
       color.rgb += compute_reflection(tex03.xy, N);
+#else
+      color.rgb += compute_reflection(0.5*gl_FragCoord.xy + vec2(0.5), N);
+#endif
 
    BRANCH if (doRefractions)
    {
@@ -505,7 +573,11 @@ void main() {
    }
 
    BRANCH if (doReflections)
+#ifndef SHADER_GLES30
       color.rgb += compute_reflection(tex03, N);
+#else
+      color.rgb += compute_reflection(0.5*gl_FragCoord.xy + vec2(0.5), N);
+#endif
 
    BRANCH if (doRefractions)
    {
@@ -527,7 +599,11 @@ in vec3 normal;
 
 void main() {
    float3 N = normalize(normal);
+#ifndef SHADER_GLES30
    color.rgb = compute_reflection(tex03, N);
+#else
+   color.rgb = compute_reflection(0.5*gl_FragCoord.xy + vec2(0.5), N);
+#endif
    color.a = 1.0;
    color *= staticColor_Alpha;
 }
@@ -551,7 +627,11 @@ void main() {
    result.a *= cBase_Alpha.a;
 
    float3 N = normalize(normal);
+#ifndef SHADER_GLES30
    result.rgb = compute_reflection(tex03, N);
+#else
+   result.rgb = compute_reflection(0.5*gl_FragCoord.xy + vec2(0.5), N);
+#endif
 
    BRANCH if (cBase_Alpha.a < 1.0 && result.a < 1.0)
    {
@@ -612,12 +692,22 @@ in vec3 vPosition;
 in vec3 vNormal;
 in vec2 tc;
 
+#ifndef SHADER_STANDALONE
 out vec3 tablePos_gs;
 out vec3 worldPos_gs;
 out vec3 normal_gs;
 out vec2 tex03_gs;
+#else
+out vec3 tablePos;
+out vec3 worldPos;
+out vec3 normal;
+noperspective out vec2 tex03;
+
+uniform float fKickerScale;
+#endif
 
 void main() {
+#ifndef SHADER_STANDALONE
    float4 vPosition4 = float4(vPosition,1.0);
    gl_Position = vPosition4;
    tablePos_gs = (matWorld * vPosition4).xyz;
@@ -625,6 +715,25 @@ void main() {
    tex03_gs = bulbPos.xy/bulbPos.w;
    worldPos_gs = (matWorldView * vPosition4).xyz;
    normal_gs = normalize((matWorldViewInverseTranspose*vNormal).xyz);
+#else
+   float4 vPosition4 = float4(vPosition,1.0);
+   gl_Position = vPosition4;
+   tablePos = (matWorld * vPosition4).xyz;
+   float4 bulbPos = (matWorldViewProj[0] * vPosition4);
+   tex03 = vec2(bulbPos.xy/bulbPos.w);
+   worldPos = (matWorldView * vPosition4).xyz;
+   normal = normalize((matWorldViewInverseTranspose*vNormal).xyz);
+
+   float4 P2 = gl_Position;
+   P2.z -= 30.0 * fKickerScale;
+
+   gl_Position.xyw = (matWorldViewProj[0]*gl_Position).xyw;
+   gl_Position.z = (matWorldViewProj[0]*P2).z;
+
+   vec2 screen_space = 0.5 * (gl_Position.xy / gl_Position.w) + vec2(0.5);
+
+   tex03.xy = screen_space; // Sampling from a normal screen space texture
+#endif
 }
 
 //------------------------------------

@@ -23,7 +23,12 @@ layout(location=0) in vec3 vPosition;
 layout(location=1) in vec3 vNormal;
 layout(location=2) in vec2 tc;
 
+#ifndef SHADER_STANDALONE
 out vec2 tex0_gs;
+#else
+out vec2 tex0;
+out vec3 tablePos;
+#endif
 
 ////GEOMETRY
 #extension GL_ARB_viewport_array : enable
@@ -61,8 +66,16 @@ out vec4 color;
 
 void main()
 {
+#ifndef SHADER_STANDALONE
    gl_Position = vec4(vPosition, 1.0);
    tex0_gs = tc;
+#else
+   gl_Position = vec4(vPosition, 1.0);
+   tex0 = tc;
+
+   gl_Position = (matWorldViewProj[0]*gl_Position);
+   tablePos = gl_Position.xyz;
+#endif
 }
 
 ////gs_simple_main

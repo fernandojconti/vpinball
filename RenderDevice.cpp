@@ -1,6 +1,8 @@
 #include "stdafx.h"
 
+#ifndef __STANDALONE__
 #include <DxErr.h>
+#endif
 
 // Undefine this if you want to debug VR mode without a VR headset
 //#define VR_PREVIEW_TEST
@@ -90,6 +92,7 @@ static pRGV mRtlGetVersion = nullptr;
 
 bool IsWindows10_1803orAbove()
 {
+#ifndef __STANDALONE__
    if (mRtlGetVersion == nullptr)
       mRtlGetVersion = (pRGV)GetProcAddress(GetModuleHandle(TEXT("ntdll")), "RtlGetVersion"); // apparently the only really reliable solution to get the OS version (as of Win10 1803)
 
@@ -108,6 +111,9 @@ bool IsWindows10_1803orAbove()
    }
 
    return false;
+#else
+   return true;
+#endif
 }
 
 static unsigned int ComputePrimitiveCount(const RenderDevice::PrimitiveTypes type, const int vertexCount)
@@ -149,7 +155,7 @@ static const char* glErrorToString(const int error) {
 
 void ReportFatalError(const HRESULT hr, const char *file, const int line)
 {
-   char msg[2048+128];
+   char msg[2176];
 #ifdef ENABLE_SDL
    sprintf_s(msg, sizeof(msg), "GL Fatal Error 0x%0002X %s in %s:%d", hr, glErrorToString(hr), file, line);
 #else
@@ -330,6 +336,7 @@ void EnumerateDisplayModes(const int display, vector<VideoMode>& modes)
 #endif
 }
 
+#ifndef __STANDALONE__
 BOOL CALLBACK MonitorEnumList(__in  HMONITOR hMonitor, __in  HDC hdcMonitor, __in  LPRECT lprcMonitor, __in  LPARAM dwData)
 {
    std::map<string,DisplayConfig>* data = reinterpret_cast<std::map<string,DisplayConfig>*>(dwData);
@@ -352,6 +359,7 @@ BOOL CALLBACK MonitorEnumList(__in  HMONITOR hMonitor, __in  HDC hdcMonitor, __i
    data->insert(std::pair<string, DisplayConfig>(config.DeviceName, config));
    return TRUE;
 }
+#endif
 
 int getDisplayList(vector<DisplayConfig>& displays)
 {
@@ -532,8 +540,10 @@ void RenderDevice::CreateDevice(int &refreshrate, UINT adapterIndex)
       ShowError("Failed to setup SDL output window");
       exit(-1);
    }
+    
    refreshrate = mode.refresh_rate;
    bool video10bit = mode.format == SDL_PIXELFORMAT_ARGB2101010;
+    
    switch (mode.format)
    {
    case SDL_PIXELFORMAT_RGB565: back_buffer_format = colorFormat::RGB5; break;
@@ -557,14 +567,16 @@ void RenderDevice::CreateDevice(int &refreshrate, UINT adapterIndex)
    SDL_SysWMinfo wmInfo;
    SDL_VERSION(&wmInfo.version);
    SDL_GetWindowWMInfo(m_sdl_playfieldHwnd, &wmInfo);
+#ifndef __STANDALONE__
    m_windowHwnd = wmInfo.info.win.window;
+#endif
 
    m_sdl_context = SDL_GL_CreateContext(m_sdl_playfieldHwnd);
 
    SDL_GL_MakeCurrent(m_sdl_playfieldHwnd, m_sdl_context);
 
 #ifndef __OPENGLES__
-   if (!gladLoadGLLoader(SDL_GL_GetProcAddress)) {
+   if (!gladLoadGL((GLADloadfunc) SDL_GL_GetProcAddress)) {
 #else
    if (!gladLoadGLES2((GLADloadfunc) SDL_GL_GetProcAddress)) {
 #endif
@@ -572,6 +584,13 @@ void RenderDevice::CreateDevice(int &refreshrate, UINT adapterIndex)
       exit(-1);
    }
 
+#ifdef __STANDALONE__
+   unsigned int num_exts_i = 0;
+   glad_glGetIntegerv(GL_NUM_EXTENSIONS, (int*) &num_exts_i);
+   PLOGD.printf("%d extensions available", num_exts_i);
+   for(int index = 0; index < num_exts_i; index++) {
+      PLOGD.printf("%s", glad_glGetStringi(GL_EXTENSIONS, index));
+   }
 #ifdef __OPENGLES__
    int range[2];
    int precision;
@@ -580,18 +599,21 @@ void RenderDevice::CreateDevice(int &refreshrate, UINT adapterIndex)
    glGetShaderPrecisionFormat(GL_FRAGMENT_SHADER, GL_HIGH_FLOAT, range, &precision);
    PLOGD.printf("Fragment shader high precision float range: %d %d precision: %d", range[0], range[1], precision);
 #endif
+#endif
 
    int gl_majorVersion = 0;
    int gl_minorVersion = 0;
    glGetIntegerv(GL_MAJOR_VERSION, &gl_majorVersion);
    glGetIntegerv(GL_MINOR_VERSION, &gl_minorVersion);
 
+#ifndef __STANDALONE__
    if (gl_majorVersion < 3 || (gl_majorVersion == 3 && gl_minorVersion < 2)) {
       char errorMsg[256];
       sprintf_s(errorMsg, sizeof(errorMsg), "Your graphics card only supports OpenGL %d.%d, but VPVR requires OpenGL 3.2 or newer.", gl_majorVersion, gl_minorVersion);
       ShowError(errorMsg);
       exit(-1);
    }
+#endif
 
    m_GLversion = gl_majorVersion*100 + gl_minorVersion;
 
@@ -618,6 +640,10 @@ void RenderDevice::CreateDevice(int &refreshrate, UINT adapterIndex)
    m_width = fbWidth;
    m_height = fbHeight;
    */
+
+  SDL_GL_GetDrawableSize(m_sdl_playfieldHwnd, &m_width, &m_height);
+
+  PLOGI.printf("Drawable Size: width=%d, height=%d", m_width, m_height);
 
 #ifdef ENABLE_VR
    m_scale = 1.0f;
@@ -911,17 +937,14 @@ void RenderDevice::CreateDevice(int &refreshrate, UINT adapterIndex)
    delete surf;
 
    // Retrieve a reference to the back buffer.
-   int back_buffer_width, back_buffer_height;
-#ifdef ENABLE_SDL
-   SDL_GL_GetDrawableSize(m_sdl_playfieldHwnd, &back_buffer_width, &back_buffer_height);
-#else
-   back_buffer_width = m_width;
-   back_buffer_height = m_height;
-#endif
-   m_pBackBuffer = new RenderTarget(this, back_buffer_width, back_buffer_height, back_buffer_format);
+   m_pBackBuffer = new RenderTarget(this, m_width, m_height, back_buffer_format);
 
 #ifdef ENABLE_SDL
+#ifndef __OPENGLES__
    const colorFormat render_format = ((m_BWrendering == 1) ? colorFormat::RG16F : ((m_BWrendering == 2) ? colorFormat::RED16F : colorFormat::RGB16F));
+#else
+   const colorFormat render_format = ((m_BWrendering == 1) ? colorFormat::RG16F : ((m_BWrendering == 2) ? colorFormat::RED16F : colorFormat::RGBA16F));
+#endif
 #else
    const colorFormat render_format = ((m_BWrendering == 1) ? colorFormat::RG16F : ((m_BWrendering == 2) ? colorFormat::RED16F : colorFormat::RGBA16F));
 #endif
@@ -1010,7 +1033,9 @@ void RenderDevice::CreateDevice(int &refreshrate, UINT adapterIndex)
 #endif
 
    // Always load the (small) SMAA textures since SMAA can be toggled at runtime through the live UI
+#ifndef __OPENGLES__
    UploadAndSetSMAATextures();
+#endif
 
    // Force applying a defined initial render state
    m_current_renderstate.m_state = (~m_renderstate.m_state) & ((1 << 21) - 1);
@@ -1023,7 +1048,11 @@ bool RenderDevice::LoadShaders()
 #ifdef ENABLE_SDL // OpenGL
    basicShader = new Shader(this, "BasicShader.glfx"s);
    DMDShader = new Shader(this, m_stereo3D == STEREO_VR ? "DMDShaderVR.glfx"s : "DMDShader.glfx"s);
+#ifndef __OPENGLES__
    FBShader = new Shader(this, "FBShader.glfx"s, "SMAA.glfx"s);
+#else
+   FBShader = new Shader(this, "FBShader.glfx"s);
+#endif
    flasherShader = new Shader(this, "FlasherShader.glfx"s);
    lightShader = new Shader(this, "LightShader.glfx"s);
    if (m_stereo3D != STEREO_OFF)
@@ -1046,8 +1075,10 @@ bool RenderDevice::LoadShaders()
    basicShader->SetVector(SHADER_w_h_height, (float)(1.0 / (double)GetMSAABackBufferTexture()->GetWidth()), (float)(1.0 / (double)GetMSAABackBufferTexture()->GetHeight()), 0.0f, 0.0f);
    basicShader->SetFlasherColorAlpha(vec4(1.0f, 1.0f, 1.0f, 1.0f)); // No tinting
    DMDShader->SetFloat(SHADER_alphaTestValue, 1.0f); // No alpha clipping
+#ifndef __OPENGLES__
    FBShader->SetTexture(SHADER_areaTex, m_SMAAareaTexture);
    FBShader->SetTexture(SHADER_searchTex, m_SMAAsearchTexture);
+#endif
 
    return true;
 }
@@ -1177,8 +1208,10 @@ void RenderDevice::FreeShader()
       FBShader->SetTextureNull(SHADER_tex_depth);
       FBShader->SetTextureNull(SHADER_tex_color_lut);
       FBShader->SetTextureNull(SHADER_tex_ao_dither);
+#ifndef __OPENGLES__
       FBShader->SetTextureNull(SHADER_areaTex);
       FBShader->SetTextureNull(SHADER_searchTex);
+#endif
       delete FBShader;
       FBShader = nullptr;
    }

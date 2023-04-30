@@ -16,6 +16,12 @@
 
 #include <string>
 
+#ifdef __OPENGLES__
+#define FLT_MIN_VALUE 0.00006103515625
+#else
+#define FLT_MIN_VALUE 0.0000001
+#endif
+
 // Declaration of all available techniques (shader program)
 // When changed, this list must also be copied unchanged to Shader.cpp (for its implementation)
 #define SHADER_TECHNIQUE(name) SHADER_TECHNIQUE_##name
@@ -114,9 +120,11 @@ enum ShaderTechniques
    SHADER_TECHNIQUE(basic_noLight),
    SHADER_TECHNIQUE(bulb_light),
    SHADER_TECHNIQUE(bulb_light_with_ball_shadows),
+#ifndef __OPENGLES__
    SHADER_TECHNIQUE(SMAA_ColorEdgeDetection),
    SHADER_TECHNIQUE(SMAA_BlendWeightCalculation),
    SHADER_TECHNIQUE(SMAA_NeighborhoodBlending),
+#endif
    SHADER_TECHNIQUE(stereo),
    SHADER_TECHNIQUE(stereo_Int),
    SHADER_TECHNIQUE(stereo_Flipped_Int),
@@ -393,7 +401,11 @@ public:
          assert(m_shader->m_stateOffsets[uniformName] != -1);
          assert(shaderUniformNames[uniformName].type == SUT_Float);
          assert(shaderUniformNames[uniformName].count == 1);
+#ifndef __OPENGLES__
          *(float*)(m_state + m_shader->m_stateOffsets[uniformName]) = f;
+#else
+         *(float*)(m_state + m_shader->m_stateOffsets[uniformName]) = (f > 0 && f < FLT_MIN_VALUE) ? FLT_MIN_VALUE : f;
+#endif
       }
       float GetFloat(const ShaderUniforms uniformName)
       {
@@ -524,6 +536,9 @@ private:
    bool parseFile(const string& fileNameRoot, const string& fileName, int level, robin_hood::unordered_map<string, string>& values, const string& parentMode);
    string analyzeFunction(const string& shaderCodeName, const string& technique, const string& functionName, const robin_hood::unordered_map<string, string>& values);
    ShaderTechnique* compileGLShader(const ShaderTechniques technique, const string& fileNameRoot, const string& shaderCodeName, const string& vertex, const string& geometry, const string& fragment);
+#ifdef __STANDALONE__
+   string preprocessGLShader(const string& shaderCode);
+#endif
 
 #else // DirectX 9
    struct UniformDesc

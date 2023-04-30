@@ -5,7 +5,7 @@
 #include "stdafx.h" 
 #include "inc/forsyth.h"
 #include "objloader.h"
-#include "inc/miniz.c"
+#include "inc/miniz/miniz.h"
 #include "inc/progmesh.h"
 #include "inc/ThreadPool.h"
 #include "Shader.h"
@@ -36,6 +36,7 @@ bool Mesh::LoadAnimation(const char *fname, const bool flipTV, const bool conver
    idx++;
    name = name.substr(0,idx);
    string sname = name + "*.obj";
+#ifndef __STANDALONE__
    WIN32_FIND_DATA data;
    const HANDLE h = FindFirstFile(sname.c_str(), &data);
    vector<string> allFiles;
@@ -74,6 +75,7 @@ bool Mesh::LoadAnimation(const char *fname, const bool flipTV, const bool conver
    }
    sname = std::to_string(frameCounter)+" frames imported!";
    g_pvp->MessageBox(sname.c_str(), "Info", MB_OK | MB_ICONEXCLAMATION);
+#endif
    return true;
 }
 
@@ -1413,7 +1415,9 @@ void Primitive::RenderSetup()
    if (m_d.m_groupdRendering || m_d.m_skipRendering)
       return;
 
-   PLOGD_IF(m_d.m_staticRendering && m_d.m_disableLightingBelow != 1.0f) << "Primitive '" << m_wzName << "' is set as static rendering with lighting from below not disabled. The back lighting will not be performed.";
+   const char* const szT = MakeChar(m_wzName);
+   PLOGD_IF(m_d.m_staticRendering && m_d.m_disableLightingBelow != 1.0f) << "Primitive '" << szT << "' is set as static rendering with lighting from below not disabled. The back lighting will not be performed.";
+   delete[] szT;
 
    m_lightmap = m_ptable->GetLight(m_d.m_szLightmap);
    if (m_lightmap)
@@ -1901,6 +1905,7 @@ HRESULT Primitive::InitPostLoad()
 
 INT_PTR CALLBACK Primitive::ObjImportProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
+#ifndef __STANDALONE__
    static Primitive *prim = nullptr;
    switch (uMsg)
    {
@@ -2065,12 +2070,15 @@ INT_PTR CALLBACK Primitive::ObjImportProc(HWND hwndDlg, UINT uMsg, WPARAM wParam
          }
       }
    }
+#endif
    return FALSE;
 }
 
 bool Primitive::BrowseFor3DMeshFile()
 {
+#ifndef __STANDALONE__
    DialogBoxParam(m_vpinball->theInstance, MAKEINTRESOURCE(IDD_MESH_IMPORT_DIALOG), m_vpinball->GetHwnd(), ObjImportProc, (size_t)this);
+#endif
 #if 1
    return false;
 #else
@@ -2220,6 +2228,7 @@ bool Primitive::LoadMeshDialog()
 
 void Primitive::ExportMeshDialog()
 {
+#ifndef __STANDALONE__
    string szInitialDir;
    HRESULT hr = LoadValue(regKey[RegName::RecentDir], "ImportDir"s, szInitialDir);
    if (hr != S_OK)
@@ -2239,7 +2248,7 @@ void Primitive::ExportMeshDialog()
       WideCharToMultiByteNull(CP_ACP, 0, m_wzName, -1, name, sizeof(name), nullptr, nullptr);
       m_mesh.SaveWavefrontObj(szFileName[0], m_d.m_use3DMesh ? string(name) : "Primitive"s);
    }
-
+#endif
 }
 
 bool Primitive::IsTransparent() const

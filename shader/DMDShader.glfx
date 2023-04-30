@@ -46,12 +46,21 @@ layout(location=0) in vec3 vPosition;
 layout(location=1) in vec3 vNormal;
 layout(location=2) in vec2 tc;
 
+#ifndef SHADER_STANDALONE
 out vec2 tex0_gs;
+#else
+out vec2 tex0;
+#endif
 
 void main()
 {
+#ifndef SHADER_STANDALONE
    gl_Position = float4(vPosition, 1.0);
    tex0_gs = tc;
+#else
+   gl_Position = float4(vPosition, 1.0);
+   tex0 = tc;
+#endif
 }
 
 ////vs_simple_world
@@ -60,12 +69,23 @@ layout(location=0) in vec3 vPosition;
 layout(location=1) in vec3 vNormal;
 layout(location=2) in vec2 tc;
 
+#ifndef SHADER_STANDALONE
 out vec2 tex0_gs;
+#else
+out vec2 tex0;
+#endif
 
 void main()
 {
+#ifndef SHADER_STANDALONE
    gl_Position = float4(vPosition, 1.0);
    tex0_gs = tc;
+#else
+   gl_Position = float4(vPosition, 1.0);
+   tex0 = tc;
+
+   gl_Position = (matWorldViewProj[0]*gl_Position);
+#endif
 }
 
 ////gs_simple_main

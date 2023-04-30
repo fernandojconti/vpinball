@@ -67,11 +67,17 @@ layout(location=0) in vec3 vPosition;
 layout(location=1) in vec3 vNormal;
 layout(location=2) in vec2 tex0;
 
+#ifndef SHADER_STANDALONE
 out vec4 normal_t0x_gs;
 out vec4 worldPos_t0y_gs;
+#else
+out vec4 normal_t0x;
+out vec4 worldPos_t0y;
+#endif
 
 void main()
 {
+#ifndef SHADER_STANDALONE
 	// apply spinning and move the ball to it's actual position
 	float4 pos = vec4(vPosition, 1.0);
 	pos.xyz = (orientation * pos).xyz;
@@ -85,6 +91,23 @@ void main()
 	gl_Position = pos;
 	normal_t0x_gs = float4(normal,tex0.x);
 	worldPos_t0y_gs = float4(p,tex0.y);
+#else
+	// apply spinning and move the ball to it's actual position
+	float4 pos = vec4(vPosition, 1.0);
+	pos.xyz = (orientation * pos).xyz;
+
+	// apply spinning to the normals too to get the sphere mapping effect
+	const float3 nspin = (orientation * vec4(vNormal,0.0)).xyz;
+	const float3 normal = normalize((vec4(nspin, 0.0) * matWorldViewInverse).xyz); // actually: mul(vec4(nspin,0.), matWorldViewInverseTranspose), but optimized to save one matrix
+
+	const float3 p = (matWorldView * pos).xyz;
+
+	gl_Position = pos;
+	normal_t0x = float4(normal,tex0.x);
+	worldPos_t0y = float4(p,tex0.y);
+
+	gl_Position = (matWorldViewProj[0]*gl_Position);
+#endif
 }
 
 ////vsBallTrail
@@ -93,12 +116,23 @@ layout(location=0) in vec3 vPosition;
 layout(location=1) in vec3 vNormal;
 layout(location=2) in vec2 tex0;
 
+#ifndef SHADER_STANDALONE
 out vec3 tex0_alpha_gs;
+#else
+out vec3 tex0_alpha;
+#endif
 
 void main()
 {
+#ifndef SHADER_STANDALONE
 	gl_Position = vec4(vPosition, 1.0);
 	tex0_alpha_gs = vec3(tex0, vNormal.x); //!! abuses normal for now
+#else
+	gl_Position = vec4(vPosition, 1.0);
+	tex0_alpha = vec3(tex0, vNormal.x); //!! abuses normal for now
+
+	gl_Position = (matWorldViewProj[0]*gl_Position);
+#endif
 }
 
 ////gsBall

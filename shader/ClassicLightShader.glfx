@@ -38,13 +38,21 @@ layout(location=0) in vec3 vPosition;
 layout(location=1) in vec3 vNormal;
 layout(location=2) in vec2 tc;
 
+#ifndef SHADER_STANDALONE
 out vec2 tex0_gs;
 out vec3 worldPos_gs;
 out vec3 tablePos_gs;
 out vec3 normal_gs;
+#else
+out vec2 tex0;
+out vec3 worldPos;
+out vec3 tablePos;
+out vec3 normal;
+#endif
 
 void main()
 {
+#ifndef SHADER_STANDALONE
     // trafo all into worldview space (as most of the weird trafos happen in view, world is identity so far)
     float3 P = (matWorldView * vec4(vPosition,1.0)).xyz;
     float3 N = normalize((matWorldViewInverseTranspose * vNormal).xyz);
@@ -54,6 +62,19 @@ void main()
     tablePos_gs = vPosition.xyz;
     worldPos_gs = P;
     normal_gs = N;
+#else
+    // trafo all into worldview space (as most of the weird trafos happen in view, world is identity so far)
+    float3 P = (matWorldView * vec4(vPosition,1.0)).xyz;
+    float3 N = normalize((matWorldViewInverseTranspose * vNormal).xyz);
+
+    gl_Position = float4(vPosition, 1.0);
+    tex0 = tc;
+    tablePos = vPosition.xyz;
+    worldPos = P;
+    normal = N;
+
+    gl_Position = matWorldViewProj[0]*gl_Position;
+#endif
 }
 
 ////gs_light_main

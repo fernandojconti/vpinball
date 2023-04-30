@@ -4,21 +4,28 @@
 #include <SDL2/SDL_syswm.h>
 #endif
 
-#include "BAM/BAMView.h"
+#ifndef __STANDALONE__
+#include "inc/BAM/BAMView.h"
+#endif
 
+#ifndef __STANDALONE__
 #include "imgui/imgui_impl_win32.h"
+#endif
 
-#include <algorithm>
 #include <ctime>
 #include "../meshes/ballMesh.h"
 #include "Shader.h"
 #include "typedefs3D.h"
+#ifndef __STANDALONE__
 #include "captureExt.h"
+#endif
 #ifndef ENABLE_SDL
 #include "BallShader.h"
 #endif
 #include "../math/bluenoise.h"
+#ifndef __STANDALONE__
 #include "../inc/winsdk/legacy_touch.h"
+#endif
 
 #if __cplusplus >= 202002L && !defined(__clang__)
 #define stable_sort std::ranges::stable_sort
@@ -63,6 +70,7 @@ Player::Player(const bool cameraMode, PinTable *const editor_table, PinTable *co
 #if !(defined(_M_IX86) || defined(_M_X64) || defined(_M_AMD64) || defined(__i386__) || defined(__i386) || defined(__i486__) || defined(__i486) || defined(i386) || defined(__ia64__) || defined(__x86_64__))
  #pragma message ( "Warning: No CPU float ignore denorm implemented" )
 #else
+#ifndef __STANDALONE__
    {
       init_cpu_detection
       // check for SSE and exit if not available, as some code relies on it by now
@@ -76,6 +84,7 @@ Player::Player(const bool cameraMode, PinTable *const editor_table, PinTable *co
       else
          _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON); // only flush denorms to zero
    }
+#endif
 #endif
 
 #ifdef STEPPING
@@ -200,6 +209,7 @@ Player::Player(const bool cameraMode, PinTable *const editor_table, PinTable *co
       m_AAfactor = LoadValueFloatWithDefault(regKey[RegName::Player], "AAFactor"s, LoadValueBoolWithDefault(regKey[RegName::Player], "USEAA"s, false) ? 2.0f : 1.0f);
       m_dynamicAO = LoadValueBoolWithDefault(regKey[RegName::Player], "DynamicAO"s, false);
       m_disableAO = LoadValueBoolWithDefault(regKey[RegName::Player], "DisableAO"s, false);
+
       m_ss_refl = LoadValueBoolWithDefault(regKey[RegName::Player], "SSRefl"s, false);
       m_stereo3Denabled = LoadValueBoolWithDefault(regKey[RegName::Player], "Stereo3DEnabled"s, (m_stereo3D != STEREO_OFF));
       m_stereo3DY = LoadValueBoolWithDefault(regKey[RegName::Player], "Stereo3DYAxis"s, false);
@@ -341,8 +351,10 @@ void Player::PreRegisterClass(WNDCLASS& wc)
     wc.style = 0;
     wc.hInstance = g_pvp->theInstance;
     wc.lpszClassName = "VPPlayer"; // leave as-is as e.g. VPM relies on this
+#ifndef __STANDALONE__
     wc.hIcon = LoadIcon(g_pvp->theInstance, MAKEINTRESOURCE(IDI_TABLE));
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+#endif
     wc.lpszMenuName = nullptr;
 }
 
@@ -406,7 +418,6 @@ void Player::PreCreate(CREATESTRUCT& cs)
         x += (m_screenwidth - m_wnd_width) / 2;
         y += (m_screenheight - m_wnd_height) / 2;
 
-#ifdef _MSC_VER
         // is this a non-fullscreen window? -> get previously saved window position
         if ((m_wnd_height != m_screenheight) || (m_wnd_width != m_screenwidth))
         {
@@ -418,6 +429,7 @@ void Player::PreCreate(CREATESTRUCT& cs)
             r.top = yn;
             r.right = xn + m_wnd_width;
             r.bottom = yn + m_wnd_height;
+#ifndef __STANDALONE__
             if (MonitorFromRect(&r, MONITOR_DEFAULTTONULL) != nullptr) // window is visible somewhere, so use the coords from the registry
             {
                 x = xn;
@@ -559,9 +571,14 @@ void Player::CreateWnd(HWND parent /* = 0 */)
    SDL_VERSION(&wmInfo.version);
    SDL_GetWindowWMInfo(m_sdl_playfieldHwnd, &wmInfo);
 
+#ifndef __STANDALONE__
    // Attach it (raise a WM_CREATE which in turns call OnInitialUpdate)
    Attach(wmInfo.info.win.window);
+#else
+   OnInitialUpdate();
+#endif
 
+#ifndef __STANDALONE__
    if (cs.style & WS_VISIBLE)
    {
       if (cs.style & WS_MAXIMIZE)
@@ -571,6 +588,7 @@ void Player::CreateWnd(HWND parent /* = 0 */)
       else
          ShowWindow();
    }
+#endif
 #else
    Create();
 #endif // ENABLE_SDL
@@ -662,10 +680,12 @@ void Player::OnInitialUpdate()
 
 void Player::Shutdown()
 {
+#ifndef __STANDALONE__
 #ifdef ENABLE_SDL
    Detach();
 #endif
    captureStop();
+#endif
 
    while (ShowCursor(FALSE) >= 0) ;
    while(ShowCursor(TRUE) < 0) ;
@@ -1242,11 +1262,14 @@ HRESULT Player::Init()
    // Set the output frame buffer size to the size of the window output
    m_pin3d.m_pd3dPrimaryDevice->GetOutputBackBuffer()->SetSize(m_wnd_width, m_wnd_height);
 
+#ifndef __STANDALONE__
    if (m_fullScreen)
       SetWindowPos(nullptr, 0, 0, m_wnd_width, m_wnd_height, SWP_NOOWNERZORDER | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOMOVE);
+#endif
 
    m_pininput.Init(GetHwnd());
 
+#ifndef __STANDALONE__
    //
    const unsigned int lflip = get_vk(m_rgKeys[eLeftFlipperKey]);
    const unsigned int rflip = get_vk(m_rgKeys[eRightFlipperKey]);
@@ -1256,10 +1279,14 @@ HRESULT Player::Init()
       m_ptable->m_tblMirrorEnabled = true;
    else
       m_ptable->m_tblMirrorEnabled = LoadValueBoolWithDefault(regKey[RegName::Player], "mirror"s, false);
+#else
+      m_ptable->m_tblMirrorEnabled = LoadValueBoolWithDefault(regKey[RegName::Player], "mirror"s, false);
+#endif
 
    m_pin3d.m_pd3dPrimaryDevice->SetRenderStateCulling(RenderState::CULL_NONE); // re-init/thrash cache entry due to the hacky nature of the table mirroring
    m_pin3d.m_pd3dPrimaryDevice->SetRenderStateCulling(RenderState::CULL_CCW);
 
+#ifndef __STANDALONE__
    // if left flipper or shift hold during load, then swap DT/FS view (for quick testing)
    if (m_ptable->m_BG_current_set != 2 &&
        !m_ptable->m_tblMirrorEnabled &&
@@ -1271,6 +1298,9 @@ HRESULT Player::Init()
    }
    else
        m_toogle_DTFS = false;
+#else
+       m_toogle_DTFS = false;
+#endif
 
    m_pin3d.InitLayout(m_ptable->m_BG_enable_FSS, m_ptable->GetMaxSeparation());
 
@@ -1629,6 +1659,7 @@ HRESULT Player::Init()
    m_pEditorTable->m_progressDialog.SetProgress(100);
    m_pEditorTable->m_progressDialog.SetName("Starting..."s);
 
+#ifndef __STANDALONE__
    g_pvp->GetPropertiesDocker()->EnableWindow(FALSE);
    g_pvp->GetLayersDocker()->EnableWindow(FALSE);
    g_pvp->GetToolbarDocker()->EnableWindow(FALSE);
@@ -1646,6 +1677,7 @@ HRESULT Player::Init()
    SetFocus();
 
    LockForegroundWindow(true);
+#endif
 
    // Call Init -- TODO: what's the relation to ptable->FireVoidEvent() above?
    for (size_t i = 0; i < m_vhitables.size(); ++i)
@@ -1655,16 +1687,20 @@ HRESULT Player::Init()
          ph->GetEventProxyBase()->FireVoidEvent(DISPID_GameEvents_Init);
    }
 
+#ifndef __STANDALONE__
    if (m_detectScriptHang)
       g_pvp->PostWorkToWorkerThread(HANG_SNOOP_START, NULL);
+#endif
 
    // 0 means disable limiting of draw-ahead queue
    m_limiter.Init(m_pin3d.m_pd3dPrimaryDevice, m_maxPrerenderedFrames);
 
    // Broadcast a message to notify front-ends that it is 
    // time to reveal the playfield. 
+#ifndef __STANDALONE__
    UINT nMsgID = RegisterWindowMessage(_T("VPTableStart"));
    ::PostMessage(HWND_BROADCAST, nMsgID, NULL, NULL);
+#endif
 
    return S_OK;
 }
@@ -1771,7 +1807,9 @@ void Player::InitStatic()
 
       // Finish the frame.
       m_pin3d.m_pd3dPrimaryDevice->FlushRenderFrame();
+#ifndef __STANDALONE__
       if (m_pEditorTable->m_progressDialog.IsWindow())
+#endif
          m_pEditorTable->m_progressDialog.SetProgress(60 +(((30 * (n_iter + 1 - iter)) / (n_iter + 1))));
    }
 
@@ -3272,12 +3310,20 @@ void Player::StereoFXAA(RenderTarget* renderedRT, const bool stereo, const bool 
       else
          m_pin3d.m_pd3dPrimaryDevice->FBShader->SetVector(SHADER_w_h_height, (float)(1.0 / renderedRT->GetWidth()), (float)(1.0 / renderedRT->GetHeight()), 
             (float)renderedRT->GetWidth(), depth_available ? 1.f : 0.f);
+#ifndef __OPENGLES__
       m_pin3d.m_pd3dPrimaryDevice->FBShader->SetTechnique(SMAA  ? SHADER_TECHNIQUE_SMAA_ColorEdgeDetection :
                                                          (DLAA  ? SHADER_TECHNIQUE_DLAA_edge :
                                                          (NFAA  ? SHADER_TECHNIQUE_NFAA :
                                                          (FXAA3 ? SHADER_TECHNIQUE_FXAA3 :
                                                          (FXAA2 ? SHADER_TECHNIQUE_FXAA2 :
                                                                   SHADER_TECHNIQUE_FXAA1)))));
+#else
+      m_pin3d.m_pd3dPrimaryDevice->FBShader->SetTechnique(DLAA  ? SHADER_TECHNIQUE_DLAA_edge :
+                                                         (NFAA  ? SHADER_TECHNIQUE_NFAA :
+                                                         (FXAA3 ? SHADER_TECHNIQUE_FXAA3 :
+                                                         (FXAA2 ? SHADER_TECHNIQUE_FXAA2 :
+                                                                  SHADER_TECHNIQUE_FXAA1))));
+#endif
       m_pin3d.m_pd3dPrimaryDevice->DrawFullscreenTexturedQuad(m_pin3d.m_pd3dPrimaryDevice->FBShader);
       renderedRT = outputRT;
 
@@ -3288,11 +3334,17 @@ void Player::StereoFXAA(RenderTarget* renderedRT, const bool stereo, const bool 
                                          : m_pin3d.m_pd3dPrimaryDevice->GetOutputBackBuffer();
          m_pin3d.m_pd3dPrimaryDevice->SetRenderTarget("Post Process AA Pass 2"s, outputRT, true);
          m_pin3d.m_pd3dPrimaryDevice->AddRenderTargetDependency(renderedRT);
+#ifndef __OPENGLES__
          m_pin3d.m_pd3dPrimaryDevice->FBShader->SetTexture(SMAA ? SHADER_edgesTex : SHADER_tex_fb_filtered, renderedRT->GetColorSampler());
          m_pin3d.m_pd3dPrimaryDevice->FBShader->SetTechnique(SMAA ? SHADER_TECHNIQUE_SMAA_BlendWeightCalculation : SHADER_TECHNIQUE_DLAA);
+#else
+         m_pin3d.m_pd3dPrimaryDevice->FBShader->SetTexture(SHADER_tex_fb_filtered, renderedRT->GetColorSampler());
+         m_pin3d.m_pd3dPrimaryDevice->FBShader->SetTechnique(SHADER_TECHNIQUE_DLAA);
+#endif
          m_pin3d.m_pd3dPrimaryDevice->DrawFullscreenTexturedQuad(m_pin3d.m_pd3dPrimaryDevice->FBShader);
          renderedRT = outputRT;
 
+#ifndef __OPENGLES__
          if (SMAA)
          {
             outputRT = sharpen || pp_stereo ? m_pin3d.m_pd3dPrimaryDevice->GetPostProcessRenderTarget(renderedRT)
@@ -3304,6 +3356,7 @@ void Player::StereoFXAA(RenderTarget* renderedRT, const bool stereo, const bool 
             m_pin3d.m_pd3dPrimaryDevice->DrawFullscreenTexturedQuad(m_pin3d.m_pd3dPrimaryDevice->FBShader);
             renderedRT = outputRT;
          }
+#endif
       }
    }
 
@@ -3592,7 +3645,11 @@ void Player::PrepareVideoBuffersNormal()
    // Since stereo is applied as a postprocess step in DX9, it disables AA and sharpening except for top/bottom & side by side modes
    const bool PostProcAA = !stereo || (m_stereo3D == STEREO_TB) || (m_stereo3D == STEREO_SBS);
 #endif
+#ifndef __OPENGLES__
    const bool SMAA  = PostProcAA && (((m_FXAA == Quality_SMAA) && (m_ptable->m_useFXAA == -1)) || (m_ptable->m_useFXAA == Quality_SMAA));
+#else
+   const bool SMAA = false;
+#endif
    const bool DLAA  = PostProcAA && (((m_FXAA == Standard_DLAA) && (m_ptable->m_useFXAA == -1)) || (m_ptable->m_useFXAA == Standard_DLAA));
    const bool NFAA  = PostProcAA && (((m_FXAA == Fast_NFAA)     && (m_ptable->m_useFXAA == -1)) || (m_ptable->m_useFXAA == Fast_NFAA));
    const bool FXAA1 = PostProcAA && (((m_FXAA == Fast_FXAA) && (m_ptable->m_useFXAA == -1)) || (m_ptable->m_useFXAA == Fast_FXAA));
@@ -4018,13 +4075,14 @@ void Player::LockForegroundWindow(const bool enable)
         }
     }
 
+#ifndef __STANDALONE__
 #if(_WIN32_WINNT >= 0x0500)
     if (m_fullScreen) // revert special tweaks of exclusive fullscreen app
        ::LockSetForegroundWindow(enable ? LSFW_LOCK : LSFW_UNLOCK);
 #else
 #pragma message ( "Warning: Missing LockSetForegroundWindow()" )
 #endif
-
+#endif
 }
 
 //+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -4048,12 +4106,14 @@ void Player::Render()
    // Try to bring PinMAME window back on top
    if (m_overall_frames < 10)
    {
+#ifndef __STANDALONE__
       const HWND hVPMWnd = FindWindow("MAME", nullptr);
       if (hVPMWnd != nullptr)
       {
          if (::IsWindowVisible(hVPMWnd))
             ::SetWindowPos(hVPMWnd, HWND_TOPMOST, 0, 0, 0, 0, (SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE)); // in some strange cases the VPinMAME window is not on top, so enforce it
       }
+#endif
    }
 
    if (m_sleeptime > 0)
@@ -4082,12 +4142,14 @@ void Player::Render()
    c_deepTested = 0;
 #endif
 
+#ifndef __STANDALONE__
 #ifdef ENABLE_SDL
    // Trigger captures
    if (m_capExtDMD)
       captureExternalDMD();
    if (m_capPUP)
       capturePUP();
+#endif
 #endif
 
    m_LastKnownGoodCounter++;
@@ -4298,8 +4360,10 @@ void Player::Render()
       m_pauseTimeTarget = 0;
       m_userDebugPaused = true;
       RecomputePseudoPauseState();
+#ifndef __STANDALONE__
       if(m_debuggerDialog.IsWindow())
         m_debuggerDialog.SendMessage(RECOMPUTEBUTTONCHECK, 0, 0);
+#endif
    }
 #endif
 
@@ -4316,8 +4380,12 @@ void Player::Render()
    if (m_ptable->m_pcv->m_scriptError)
    {
       // Stop playing (send close window message)
+#ifndef __STANDALONE__
       SendMessage(WM_CLOSE, 0, 0);
       return;
+#else
+      m_closing = CS_FORCE_STOP;
+#endif
    }
 
    // Close requested with user input
@@ -4343,7 +4411,11 @@ void Player::Render()
    {
       PauseMusic();
       // Stop playing (send close window message)
+#ifndef __STANDALONE__
       SendMessage(WM_CLOSE, 0, 0);
+#else
+      StopPlayer();
+#endif
       return;
    }
 
@@ -4353,7 +4425,14 @@ void Player::Render()
       PauseMusic();
       while (ShowCursor(FALSE) >= 0) ;
       while(ShowCursor(TRUE) < 0) ;
+#ifndef __STANDALONE__
       SendMessage(g_pvp->GetHwnd(), WM_COMMAND, ID_FILE_EXIT, NULL);
+#else
+      StopPlayer();
+      Shutdown();
+
+      g_pvp->Shutdown();
+#endif
       return;
    }
 
@@ -4365,6 +4444,7 @@ void Player::Render()
       while(ShowCursor(FALSE) >= 0) ;
       while(ShowCursor(TRUE) < 0) ;
 
+#ifndef __STANDALONE__
       if (!m_debuggerDialog.IsWindow())
       {
          m_debuggerDialog.Create(GetHwnd());
@@ -4374,6 +4454,7 @@ void Player::Render()
          m_debuggerDialog.SetForegroundWindow();
 
       EndDialog( g_pvp->GetHwnd(), ID_DEBUGWINDOW );
+#endif
    }
 }
 
@@ -5055,6 +5136,123 @@ void Player::DrawBalls()
    m_pin3d.m_pd3dPrimaryDevice->CopyRenderStates(false, initial_state);
 }
 
+#ifdef __STANDALONE__
+void Player::SavePlayerOptions() {
+   //SaveValueBool(regKey[RegName::Player], "FullScreen"s, m_fullScreen);
+   //SaveValueInt(regKey[RegName::Player], "Width"s, m_wnd_width);
+   //SaveValueInt(regKey[RegName::Player], "Height"s, m_wnd_height);
+
+   //const int colordepth = m_stereo3D == STEREO_VR ? 32 : LoadValueIntWithDefault(regKey[RegName::Player], "ColorDepth"s, 32);
+   //SaveValueInt(regKey[RegName::Player], "ColorDepth"s, colordepth);
+   //SaveValueInt(regKey[RegName::Player], "RefreshRate"s, m_refreshrate);
+
+   //const int display = LoadValueIntWithDefault(regKey[RegName::Player], "Display"s, -1);
+   //SaveValueInt(regKey[RegName::Player], "Display"s, display);
+
+   const bool video10bit = m_stereo3D == STEREO_VR ? false : LoadValueBoolWithDefault(regKey[RegName::Player], "Render10Bit"s, false);
+   SaveValueBool(regKey[RegName::Player], "Render10Bit"s, video10bit);
+
+   int maxTexDim = LoadValueIntWithDefault(regKey[RegName::Player], "MaxTexDimension"s, 0);
+   SaveValueInt(regKey[RegName::Player], "MaxTexDimension"s, maxTexDim);
+
+   SaveValueBool(regKey[RegName::Player], "BallTrail"s, m_trailForBalls);
+   SaveValueBool(regKey[RegName::Player], "DisableLightingForBalls"s, m_disableLightingForBalls);
+   SaveValueInt(regKey[RegName::Player], "AdaptiveVSync"s, m_VSync);
+   SaveValueInt(regKey[RegName::Player], "MaxPrerenderedFrames"s, m_maxPrerenderedFrames);
+
+   const float ballAspecRatioOffsetX = LoadValueFloatWithDefault(regKey[RegName::Player], "BallCorrectionX"s, 0.f);
+   SaveValueFloat(regKey[RegName::Player], "BallCorrectionX"s, ballAspecRatioOffsetX);
+
+   const float ballAspecRatioOffsetY = LoadValueFloatWithDefault(regKey[RegName::Player], "BallCorrectionY"s, 0.f);
+   SaveValueFloat(regKey[RegName::Player], "BallCorrectionY"s, ballAspecRatioOffsetY);
+
+   const float lon = LoadValueFloatWithDefault(regKey[RegName::Player], "Longitude"s, 13.37f);
+   SaveValueFloat(regKey[RegName::Player], "Longitude"s, lon);
+   const float lat = LoadValueFloatWithDefault(regKey[RegName::Player], "Latitude"s, 52.52f);
+   SaveValueFloat(regKey[RegName::Player], "Latitude"s, lat);
+
+   SaveValueFloat(regKey[RegName::Player], "NudgeStrength"s, m_NudgeShake);
+   SaveValueInt(regKey[RegName::Player], "FXAA"s, (int)m_FXAA);
+   SaveValueInt(regKey[RegName::Player], "Sharpen"s, (int)m_sharpen);
+   SaveValueBool(regKey[RegName::Player], "ScaleFXDMD"s, m_scaleFX_DMD);
+
+   const int bg_set = LoadValueIntWithDefault(regKey[RegName::Player], "BGSet"s, BG_DESKTOP);
+   SaveValueInt(regKey[RegName::Player], "BGSet"s, bg_set);
+
+   const bool useAA = LoadValueBoolWithDefault(regKey[RegName::Player], "USEAA", false);
+   SaveValueBool(regKey[RegName::Player], "USEAA"s, useAA);
+
+   SaveValueFloat(regKey[RegName::Player], "AAFactor"s, m_AAfactor);
+   SaveValueInt(regKey[RegName::Player], "MSAASamples"s, m_MSAASamples);
+
+   const bool dynamicDayNight = LoadValueBoolWithDefault(regKey[RegName::Player], "DynamicDayNight"s, false);
+   SaveValueBool(regKey[RegName::Player], "DynamicDayNight"s, dynamicDayNight);
+
+   SaveValueBool(regKey[RegName::Player], "DynamicAO"s, m_dynamicAO);
+   SaveValueBool(regKey[RegName::Player], "DisableAO"s, m_disableAO);
+
+   SaveValueInt(regKey[RegName::Player], "PFReflection"s, (int)m_pfReflectionMode);
+
+   const bool ballReflection = LoadValueBoolWithDefault(regKey[RegName::Player], "BallReflection"s, true);
+   SaveValueBool(regKey[RegName::Player], "BallReflection"s, ballReflection);
+
+   const bool pfRefl = LoadValueBoolWithDefault(regKey[RegName::Player], "PFRefl"s, true);
+   SaveValueBool(regKey[RegName::Player], "PFRefl"s, pfRefl);
+
+   SaveValueBool(regKey[RegName::Player], "SSRefl"s, m_ss_refl);
+   SaveValueInt(regKey[RegName::Player], "Stereo3D"s, (int)m_stereo3D);
+   SaveValueInt(regKey[RegName::Player], "Stereo3DEnabled"s, (int)m_stereo3D);
+   SaveValueBool(regKey[RegName::Player], "Stereo3DYAxis"s, m_stereo3DY);
+
+   const bool forceAniso = LoadValueBoolWithDefault(regKey[RegName::Player], "ForceAnisotropicFiltering"s, true);
+   SaveValueBool(regKey[RegName::Player], "ForceAnisotropicFiltering"s, forceAniso);
+
+   const bool compressTextures = LoadValueBoolWithDefault(regKey[RegName::Player], "CompressTextures"s, false);
+   SaveValueBool(regKey[RegName::Player], "CompressTextures"s, compressTextures);
+
+   const bool softwareVP = LoadValueBoolWithDefault(regKey[RegName::Player], "SoftwareVertexProcessing"s, false);
+   SaveValueBool(regKey[RegName::Player], "SoftwareVertexProcessing"s, softwareVP);
+
+   const int alphaRampsAccuracy = LoadValueIntWithDefault(regKey[RegName::Player], "AlphaRampAccuracy"s, 10);
+   SaveValueInt(regKey[RegName::Player], "AlphaRampAccuracy"s, alphaRampsAccuracy);
+
+   const float stereo3DOfs = LoadValueFloatWithDefault(regKey[RegName::Player], "Stereo3DOffset"s, 0.f);
+   SaveValueFloat(regKey[RegName::Player], "Stereo3DOffset"s, stereo3DOfs);
+
+   const float stereo3DMS = LoadValueFloatWithDefault(regKey[RegName::Player], "Stereo3DMaxSeparation"s, 0.03f);
+   SaveValueFloat(regKey[RegName::Player], "Stereo3DMaxSeparation"s, stereo3DMS);
+
+   const float stereo3DZPD = LoadValueFloatWithDefault(regKey[RegName::Player], "Stereo3DZPD"s, 0.5f);
+   SaveValueFloat(regKey[RegName::Player], "Stereo3DZPD"s, stereo3DZPD);
+
+   SaveValueFloat(regKey[RegName::Player], "Stereo3DContrast"s, m_global3DContrast);
+   SaveValueFloat(regKey[RegName::Player], "Stereo3DDesaturation"s, m_global3DDesaturation);
+
+   SaveValueBool(regKey[RegName::Player], "DisableDWM"s, m_disableDWM);
+
+   SaveValueBool(regKey[RegName::Player], "ForceBloomOff"s, m_bloomOff);
+
+   const int ballStretchMode = LoadValueIntWithDefault(regKey[RegName::Player], "BallStretchMode"s, 0);
+   SaveValueInt(regKey[RegName::Player], "BallStretchMode"s, ballStretchMode);
+
+   SaveValueBool(regKey[RegName::Player], "OverwriteBallImage"s, m_overwriteBallImages);
+
+   string ballImage;
+   if (LoadValue(regKey[RegName::Player], "BallImage"s, ballImage) != S_OK) {
+      ballImage.clear();
+   }
+   SaveValue(regKey[RegName::Player], "BallImage"s, ballImage.c_str());
+
+   string decalImage;
+   if (LoadValue(regKey[RegName::Player], "DecalImage"s, decalImage) != S_OK) {
+      decalImage.clear();
+   }
+   SaveValue(regKey[RegName::Player], "DecalImage"s, decalImage.c_str());
+
+   SaveValueInt(regKey[RegName::Player], "BWRendering"s, m_BWrendering);
+}
+#endif
+
 struct DebugMenuItem
 {
    int objectindex;
@@ -5064,15 +5262,18 @@ struct DebugMenuItem
 
 void AddEventToDebugMenu(const char *sz, int index, int dispid, LPARAM lparam)
 {
+#ifndef __STANDALONE__
    const DebugMenuItem * const pdmi = (DebugMenuItem *)lparam;
    const HMENU hmenu = pdmi->hmenu;
    const int menuid = ((pdmi->objectindex + 1) << 16) | (int)pdmi->pvdispid->size();
    pdmi->pvdispid->push_back(dispid);
    AppendMenu(hmenu, MF_STRING, menuid, sz);
+#endif
 }
 
 void Player::DoDebugObjectMenu(const int x, const int y)
 {
+#ifndef __STANDALONE__
    if (m_vdebugho.empty())
    {
       // First time the debug hit-testing has been used
@@ -5224,10 +5425,12 @@ void Player::DoDebugObjectMenu(const int x, const int y)
       delete vvdispid[i];
 
    UnpauseMusic();
+#endif
 }
 
 LRESULT Player::WndProc(UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
+#ifndef __STANDALONE__
     if (ImGui_ImplWin32_WndProcHandler(GetHwnd(), uMsg, wParam, lParam))
       return true;
 
@@ -5385,6 +5588,9 @@ LRESULT Player::WndProc(UINT uMsg, WPARAM wParam, LPARAM lParam)
     }
 
     return WndProcDefault(uMsg, wParam, lParam);
+#else
+    return 0L;
+#endif
 }
 
 void Player::StopPlayer()
@@ -5394,6 +5600,7 @@ void Player::StopPlayer()
 
    // signal the script that the game is now exited to allow any cleanup
    m_ptable->FireVoidEvent(DISPID_GameEvents_Exit);
+#ifndef __STANDALONE__
    if (m_detectScriptHang)
       g_pvp->PostWorkToWorkerThread(HANG_SNOOP_STOP, NULL);
 
@@ -5405,6 +5612,7 @@ void Player::StopPlayer()
    m_pEditorTable->EnableWindow();
 
    LockForegroundWindow(false);
+#endif
 }
 
 #ifdef PLAYBACK
